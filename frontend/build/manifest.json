@@ -1,0 +1,10 @@
+{
+    "manifest_version": 3,
+    "name": "Verity-AI",
+    "version": "1.0.0",
+    "description": "An extension to fix your transcriptions!",
+    "action": {
+      "default_popup": "index.html"
+    },
+    "permissions": []
+}
