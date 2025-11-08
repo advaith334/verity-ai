@@ -1,4 +1,5 @@
 import useRecording from '../hooks/useRecording'
+import useSlack from '../hooks/useSlack'
 
 const RecorderControl = () => {
     const { 
@@ -9,18 +10,28 @@ const RecorderControl = () => {
         error,
         toggleRecording
     } = useRecording()
+    
+    const { isSlackTab } = useSlack()
+    
+    const isButtonDisabled = !isSlackTab || isProcessing
 
     return (
         <div className="recorder-container">
             <div className="recorder-card">
                 <h2 className="recorder-title">Verity AI - Voice Recording</h2>
                 
+                {!isSlackTab && (
+                    <div className="error-message">
+                        ⚠️ Please navigate to a Slack tab to use voice recording
+                    </div>
+                )}
+                
                 {/* Recording Controls */}
                 <div className="controls-container">
                     <button 
                         onClick={toggleRecording}
-                        disabled={isProcessing}
-                        className={`record-button ${isRecording ? 'recording-active' : ''} ${isProcessing ? 'disabled' : ''}`}
+                        disabled={isButtonDisabled}
+                        className={`record-button ${isRecording ? 'recording-active' : ''} ${isButtonDisabled ? 'disabled' : ''}`}
                     >
                         {isRecording ? (
                             <>

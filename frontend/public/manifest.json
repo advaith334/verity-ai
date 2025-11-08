@@ -2,9 +2,19 @@
     "manifest_version": 3,
     "name": "Verity-AI",
     "version": "1.0.0",
-    "description": "An extension to fix your transcriptions!",
+    "description": "An extension to fix your transcriptions on Slack!",
     "action": {
       "default_popup": "index.html"
     },
-    "permissions": []
+    "permissions": [
+      "tabs",
+      "activeTab"
+    ],
+    "host_permissions": [
+      "http://*/*",
+      "https://*/*"
+    ],
+    "background": {
+      "service_worker": "background.js"
+    }
 }
