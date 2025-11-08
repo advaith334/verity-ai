@@ -1,10 +1,9 @@
 import './App.css'
+import RecorderControl from './components/recorderControl'
 
 function App() {
   return (
-    <div>
-      <h1>Verity-AI</h1>
-    </div>
+    <RecorderControl />
   )
 }
 
