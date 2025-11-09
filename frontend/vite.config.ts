@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { viteStaticCopy } from 'vite-plugin-static-copy';
+import { resolve } from 'path';
 
 export default defineConfig({
   plugins: [
@@ -18,7 +19,13 @@ export default defineConfig({
     outDir: 'build',
     rollupOptions: {
       input: {
-        main: './index.html',
+        main: resolve(__dirname, 'index.html'),
+        background: resolve(__dirname, 'src/background.ts'),
+      },
+      output: {
+        entryFileNames: (chunkInfo) => {
+          return chunkInfo.name === 'background' ? '[name].js' : 'assets/[name]-[hash].js';
+        },
       },
     },
   },
