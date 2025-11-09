@@ -3,17 +3,24 @@ import useSlack from '../hooks/useSlack'
 
 const RecorderControl = () => {
     const { 
+        isSlackTab, 
+        isAuthenticated, 
+        isConnecting, 
+        connectToSlack, 
+        disconnectFromSlack,
+        fetchSlackContext
+    } = useSlack()
+
+    const { 
         isRecording, 
-        transcription, 
-        lowConfidenceWords,
+        repairedTranscription,
         isProcessing,
         error,
         toggleRecording
-    } = useRecording()
-    
-    const { isSlackTab, isAuthenticated, isConnecting, connectToSlack, disconnectFromSlack } = useSlack()
+    } = useRecording({ fetchSlackContext, autoRepair: true })
     
     const isButtonDisabled = !isSlackTab || isProcessing || !isAuthenticated
+    const displayTranscription = repairedTranscription
 
     return (
         <div className="recorder-container">
@@ -85,13 +92,6 @@ const RecorderControl = () => {
                                     </>
                                 )}
                             </button>
-                            
-                            {isProcessing && (
-                                <div className="processing-message">
-                                    <span className="spinner">⌛</span>
-                                    Processing audio...
-                                </div>
-                            )}
                         </div>
 
                         {/* Error Message */}
@@ -102,42 +102,23 @@ const RecorderControl = () => {
                         )}
 
                         {/* Transcription Result */}
-                        {transcription && (
+                        {displayTranscription && (
                             <div className="results-container">
                                 <div className="transcription-section">
-                                    <h3 className="section-title">Transcription</h3>
-                                    <div className="transcription-text">
-                                        {transcription}
+                                    <div className="section-header">
+                                        <h3 className="section-title">Transcription</h3>
+                                    </div>
+                                    <div className={`transcription-text ${repairedTranscription ? 'repaired' : ''}`}>
+                                        {displayTranscription}
                                     </div>
                                 </div>
 
-                                {/* Low Confidence Words */}
-                                {lowConfidenceWords.length > 0 && (
-                                    <div className="low-confidence-section">
-                                        <h3 className="section-title">
-                                            ⚠️ Low Confidence Words ({lowConfidenceWords.length})
-                                        </h3>
-                                        <div className="words-grid">
-                                            {lowConfidenceWords.map((item, index) => (
-                                                <div key={index} className="word-card">
-                                                    <div className="word-text">"{item.word}"</div>
-                                                    <div className="confidence-score">
-                                                        Confidence: {(item.confidence * 100).toFixed(1)}%
-                                                    </div>
-                                                    <div className="timestamp">
-                                                        {item.start.toFixed(2)}s - {item.end.toFixed(2)}s
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {lowConfidenceWords.length === 0 && (
-                                    <div className="success-message">
-                                        ✅ All words were transcribed with high confidence!
-                                    </div>
-                                )}
+                                {isProcessing && (
+                                <div className="processing-message">
+                                    <span className="spinner">⌛</span>
+                                    Processing...
+                                </div>
+                            )}
                             </div>
                         )}
                     </>
