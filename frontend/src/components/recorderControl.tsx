@@ -11,7 +11,7 @@ const RecorderControl = () => {
         toggleRecording
     } = useRecording()
     
-    const { isSlackTab, isAuthenticated, isConnecting, teamName, connectToSlack, disconnectFromSlack } = useSlack()
+    const { isSlackTab, isAuthenticated, isConnecting, connectToSlack, disconnectFromSlack } = useSlack()
     
     const isButtonDisabled = !isSlackTab || isProcessing || !isAuthenticated
 
@@ -53,7 +53,7 @@ const RecorderControl = () => {
                 {isAuthenticated && (
                     <div className="auth-status">
                         <span className="auth-badge">
-                            ✅ Connected to {teamName || 'Slack'}
+                            ✅ Connected
                         </span>
                         <button 
                             onClick={disconnectFromSlack}

@@ -20,10 +20,6 @@ slack_client_id = os.getenv("SLACK_CLIENT_ID")
 slack_client_secret = os.getenv("SLACK_CLIENT_SECRET")
 slack_redirect_uri = os.getenv("SLACK_REDIRECT_URL")
 
-# Debug: Print environment variables on startup
-print(f"DEBUG - SLACK_CLIENT_ID: {slack_client_id}")
-print(f"DEBUG - SLACK_REDIRECT_URL: {slack_redirect_uri}")
-
 if not slack_redirect_uri:
     print("WARNING: SLACK_REDIRECT_URL is not set in .env file!")
 
@@ -88,7 +84,7 @@ def slack_oauth_authorize():
     """Redirect user to Slack OAuth authorization page (user token only)"""
     params = {
         'client_id': slack_client_id,
-        'user_scope': 'channels:history,channels:read,users:read,groups:history,groups:read,im:read,im:history,mpim:read,mpim:history,chat:write',
+        'user_scope': 'channels:history,channels:read,users:read,groups:history,groups:read,im:read,im:history,mpim:read,mpim:history',
         'redirect_uri': slack_redirect_uri,
     }
     auth_url = f"https://slack.com/oauth/v2/authorize?{urlencode(params)}"
@@ -122,24 +118,90 @@ def slack_oauth_callback():
             'team_name': data.get('team', {}).get('name'),
             'user_id': data.get('authed_user', {}).get('id')
         })
-        
-        # Return simple HTML page that will be detected by background script
-        return f"""
-        <html>
-        <head><title>Slack OAuth Success</title></head>
-        <body>
-            <h1>Connected to Slack successfully!</h1>
-            <p>You can close this tab.</p>
-            <script>
-                window.location.href = window.location.origin + window.location.pathname + '?{params}';
-            </script>
-        </body>
-        </html>
-        """
     
     except Exception as e:
         print(f"Error during OAuth: {str(e)}")
         traceback.print_exc()
+
+@app.route('/slack/context', methods=['GET'])
+def slack_context():
+    """Fetch Slack context: team info, users, and channel messages"""
+    auth_header = request.headers.get('Authorization')
+    channel_id = request.args.get('channel_id')
+    
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return jsonify({'error': 'Missing or invalid authorization header'}), 401
+    
+    access_token = auth_header.split('Bearer ')[1]
+    
+    try:
+        # Get users list
+        users_response = requests.get('https://slack.com/api/users.list', headers={
+            'Authorization': f'Bearer {access_token}'
+        })
+        users_data = users_response.json()
+        
+        # Check for rate limiting
+        if users_response.status_code == 429:
+            retry_after = users_response.headers.get('Retry-After', '60')
+            return jsonify({'error': 'rate_limited', 'retry_after': retry_after}), 429
+        
+        if users_data.get('error') == 'rate_limited':
+            return jsonify({'error': 'rate_limited'}), 429
+        
+        # Extract user names
+        users = []
+        if users_data.get('ok'):
+            users = [
+                {
+                    'id': user['id'],
+                    'name': user.get('real_name') or user.get('name'),
+                    'display_name': user.get('profile', {}).get('display_name') or user.get('name')
+                }
+                for user in users_data.get('members', [])
+                if not user.get('deleted') and not user.get('is_bot')
+            ]
+        
+        # Get channel messages if channel_id provided
+        messages = []
+        if channel_id:
+            messages_response = requests.get('https://slack.com/api/conversations.history', 
+                params={'channel': channel_id, 'limit': 50},
+                headers={'Authorization': f'Bearer {access_token}'}
+            )
+            messages_data = messages_response.json()
+            
+            # Check for rate limiting
+            if messages_response.status_code == 429:
+                retry_after = messages_response.headers.get('Retry-After', '60')
+                return jsonify({'error': 'rate_limited', 'retry_after': retry_after}), 429
+            
+            if messages_data.get('error') == 'rate_limited':
+                return jsonify({'error': 'rate_limited'}), 429
+            
+            if messages_data.get('ok'):
+                messages = [
+                    {
+                        'text': msg.get('text'),
+                        'user': msg.get('user'),
+                        'ts': msg.get('ts'),
+                        'type': msg.get('type')
+                    }
+                    for msg in messages_data.get('messages', [])
+                    if msg.get('type') == 'message'
+                ]
+        
+        return jsonify({
+            'users': users,
+            'messages': messages,
+            'channel_id': channel_id
+        })
+    
+    except Exception as e:
+        print(f"Error fetching Slack context: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/')
 def index():
