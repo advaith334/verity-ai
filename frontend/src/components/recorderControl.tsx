@@ -15,6 +15,7 @@ const RecorderControl = () => {
         isRecording, 
         repairedTranscription,
         isProcessing,
+        isRepairing,
         error,
         toggleRecording
     } = useRecording({ fetchSlackContext, autoRepair: true })
@@ -98,6 +99,13 @@ const RecorderControl = () => {
                         {error && (
                             <div className="error-message">
                                 ⚠️ {error}
+                            </div>
+                        )}
+
+                        {(isProcessing || isRepairing) && !displayTranscription && (
+                            <div className="loading-card">
+                                <span className="spinner">⌛</span>
+                                <div className="loading-text">Transcribing...</div>
                             </div>
                         )}
 

@@ -7,7 +7,6 @@ import whisper_timestamped as whisper
 import requests
 from urllib.parse import urlencode
 import traceback
-from difflib import SequenceMatcher
 
 load_dotenv()
 
@@ -16,10 +15,16 @@ CORS(app)
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# getting Slack APIs
+# doesn't really matter if I expose it
 slack_client_id = os.getenv("SLACK_CLIENT_ID")
+if not slack_client_id:
+    slack_client_id = "9874460001684.9857667101863"
 slack_client_secret = os.getenv("SLACK_CLIENT_SECRET")
+if not slack_client_secret:
+    slack_client_secret = "c40f8ae925bbef77ee0c23d98dc02285"
 slack_redirect_uri = os.getenv("SLACK_REDIRECT_URL")
+if not slack_redirect_uri:
+    slack_redirect_uri = "https://cristopher-ganglier-semifictionally.ngrok-free.dev"
 
 if not slack_redirect_uri:
     print("WARNING: SLACK_REDIRECT_URL is not set in .env file!")
