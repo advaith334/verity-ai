@@ -7,6 +7,7 @@ import whisper_timestamped as whisper
 import requests
 from urllib.parse import urlencode
 import traceback
+from difflib import SequenceMatcher
 
 load_dotenv()
 
@@ -308,11 +309,13 @@ def repair_transcription_with_context(low_confidence_words, slack_context, trans
 - Recent Channel Messages: {' | '.join(recent_messages) if recent_messages else 'None'}
 
 **Instructions:**
-1. Only correct words that are likely proper nouns (person names, company names, product names, technical terms)
-2. Use the Slack context to identify correct spellings of names and terms
-3. If a low-confidence word matches a team member's name (even phonetically), correct it
-4. Keep the rest of the transcription EXACTLY as is
-5. Return ONLY the corrected transcription, no explanations
+1. You may ONLY change a low-confidence word if it appears in the Replacement Rules list AND you use one of the authorised replacements.
+2. If no authorised replacements are listed for a word, keep it EXACTLY as in the original transcription.
+3. Never invent new names or substitute with a different person.
+4. Keep all other words, punctuation, and formatting EXACTLY the same as the original transcription.
+5. Return ONLY the corrected transcription, with no explanations or additional text.
+6. You do not necessarily need to correct all low confidence words. Only correct words that are likely proper nouns (person names, company names, product names, technical terms).
+7. Do not correct low confidence words that are proper nouns that are already correct and completely different from any of the proper nounds in the Slack context.
 
 **Corrected Transcription:**"""
 
@@ -325,8 +328,8 @@ def repair_transcription_with_context(low_confidence_words, slack_context, trans
                 {"role": "system", "content": "You are a helpful transcription correction assistant that only fixes proper nouns based on context. Return only the corrected text."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.4,
-            max_tokens=1000
+            temperature=0.3,
+            max_tokens=600
         )
         
         repaired_transcription = response.choices[0].message.content.strip()
