@@ -111,13 +111,78 @@ def slack_oauth_callback():
         # For user-token only apps, the token is in authed_user
         user_token = data.get('authed_user', {}).get('access_token')
         
-        # Redirect back with token info as URL parameters
-        params = urlencode({
-            'access_token': user_token,
-            'team_id': data.get('team', {}).get('id'),
-            'team_name': data.get('team', {}).get('name'),
-            'user_id': data.get('authed_user', {}).get('id')
+        # Prepare query string with credentials for the extension to capture
+        success_query = urlencode({
+            'access_token': user_token or '',
+            'team_id': data.get('team', {}).get('id') or '',
+            'team_name': data.get('team', {}).get('name') or '',
+            'user_id': data.get('authed_user', {}).get('id') or ''
         })
+
+        success_page = f"""
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="utf-8" />
+            <title>Slack Connected</title>
+            <style>
+                :root {{
+                    color-scheme: light dark;
+                }}
+                body {{
+                    margin: 0;
+                    padding: 2rem;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                    background: radial-gradient(circle at top, #1f2937 0%, #0f172a 55%, #020617 100%);
+                    color: #f8fafc;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    height: 100vh;
+                }}
+                .card {{
+                    background: rgba(15, 23, 42, 0.78);
+                    border-radius: 18px;
+                    padding: 2rem;
+                    max-width: 360px;
+                    text-align: center;
+                    border: 1px solid rgba(148, 163, 184, 0.25);
+                    box-shadow: 0 25px 50px rgba(2, 6, 23, 0.45);
+                    backdrop-filter: blur(18px);
+                }}
+                h1 {{
+                    font-size: 1.5rem;
+                    margin-bottom: 0.75rem;
+                }}
+                p {{
+                    margin: 0.25rem 0;
+                    font-size: 0.95rem;
+                    opacity: 0.85;
+                }}
+            </style>
+            <script>
+                (function() {{
+                    const targetQuery = '{success_query}';
+                    const current = new URL(window.location.href);
+
+                    if (!current.searchParams.has('access_token')) {{
+                        window.location.replace(`${{current.origin}}${{current.pathname}}?${{targetQuery}}`);
+                    }} else {{
+                        setTimeout(() => window.close(), 1500);
+                    }}
+                }})();
+            </script>
+        </head>
+        <body>
+            <div class="card">
+                <h1>Slack Connected</h1>
+                <p>You can close this tab now.</p>
+                <p>Returning to the extension…</p>
+            </div>
+        </body>
+        </html>
+        """
+        return success_page
     
     except Exception as e:
         print(f"Error during OAuth: {str(e)}")
@@ -166,7 +231,7 @@ def slack_context():
         messages = []
         if channel_id:
             messages_response = requests.get('https://slack.com/api/conversations.history', 
-                params={'channel': channel_id, 'limit': 50},
+                params={'channel': channel_id, 'limit': 10},
                 headers={'Authorization': f'Bearer {access_token}'}
             )
             messages_data = messages_response.json()
@@ -202,6 +267,130 @@ def slack_context():
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+
+def repair_transcription_with_context(low_confidence_words, slack_context, transcription):
+    """
+    Repairs low confidence words in transcription using Slack context (user names, recent messages).
+    Focuses on correcting proper nouns like names, places, company names, etc.
+    """
+    if not low_confidence_words or len(low_confidence_words) == 0:
+        return transcription
+    
+    try:
+        # Extract user names from Slack context
+        user_names = []
+        if slack_context and 'users' in slack_context:
+            for user in slack_context['users']:
+                if user.get('display_name'):
+                    user_names.append(user['display_name'])
+                if user.get('name'):
+                    user_names.append(user['name'])
+        
+        # Extract recent messages for additional context
+        recent_messages = []
+        if slack_context and 'messages' in slack_context:
+            recent_messages = [msg.get('text', '') for msg in slack_context['messages'][:10]]  # Last 10 messages
+        
+        # Format low confidence words for the prompt
+        low_conf_words_list = [f"{word['word']} (confidence: {word['confidence']:.2f})" for word in low_confidence_words]
+        
+        # Build comprehensive prompt for OpenAI
+        prompt = f"""You are a transcription correction assistant. Your task is to fix ONLY the low-confidence words in the transcription that are likely proper nouns (names, places, companies, etc.).
+
+**Original Transcription:**
+{transcription}
+
+**Low Confidence Words to Review:**
+{', '.join(low_conf_words_list)}
+
+**Slack Workspace Context:**
+- Team Members: {', '.join(user_names) if user_names else 'None'}
+- Recent Channel Messages: {' | '.join(recent_messages) if recent_messages else 'None'}
+
+**Instructions:**
+1. Only correct words that are likely proper nouns (person names, company names, product names, technical terms)
+2. Use the Slack context to identify correct spellings of names and terms
+3. If a low-confidence word matches a team member's name (even phonetically), correct it
+4. Keep the rest of the transcription EXACTLY as is
+5. Return ONLY the corrected transcription, no explanations
+
+**Corrected Transcription:**"""
+
+        print(f"\n🔧 Repairing transcription with {len(low_confidence_words)} low confidence words...")
+        print(f"Context: {len(user_names)} users, {len(recent_messages)} messages")
+        
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a helpful transcription correction assistant that only fixes proper nouns based on context. Return only the corrected text."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.4,
+            max_tokens=1000
+        )
+        
+        repaired_transcription = response.choices[0].message.content.strip()
+        
+        print(f"✅ Transcription repaired successfully")
+        return repaired_transcription if repaired_transcription else transcription
+        
+    except Exception as e:
+        print(f"❌ Error repairing transcription: {str(e)}")
+        traceback.print_exc()
+        return transcription
+
+@app.route('/repair_low_confidence_words', methods=['POST'])
+def repair_low_confidence_words_endpoint():
+    """
+    Endpoint to repair low confidence words in transcription using Slack context.
+    
+    Expected JSON payload:
+    {
+        "transcription": "original transcription text",
+        "low_confidence_words": [{"word": "word", "confidence": 0.5, "start": 1.0, "end": 1.5}],
+        "slack_context": {"users": [...], "messages": [...]}
+    }
+    """
+    try:
+        data = request.json
+        
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        transcription = data.get('transcription')
+        low_confidence_words = data.get('low_confidence_words', [])
+        slack_context = data.get('slack_context', {})
+        
+        if not transcription:
+            return jsonify({'error': 'Transcription is required'}), 400
+        
+        print(f"\n{'='*60}")
+        print("🔧 REPAIR LOW CONFIDENCE WORDS REQUEST")
+        print(f"{'='*60}")
+        print(f"Transcription length: {len(transcription)} chars")
+        print(f"Low confidence words: {len(low_confidence_words)}")
+        print(f"Slack context: {bool(slack_context)}")
+        
+        repaired_transcription = repair_transcription_with_context(
+            low_confidence_words,
+            slack_context,
+            transcription
+        )
+        
+        return jsonify({
+            'success': True,
+            'original_transcription': transcription,
+            'repaired_transcription': repaired_transcription,
+            'words_repaired': len(low_confidence_words)
+        })
+        
+    except Exception as e:
+        print(f"❌ Error in repair endpoint: {str(e)}")
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 @app.route('/')
 def index():

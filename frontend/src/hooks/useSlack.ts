@@ -231,9 +231,8 @@ const useSlack = () => {
             setLastFetchTime(now)
             
             console.log('✅ Slack context fetched successfully')
-            console.log(`- Team: ${data.team_name}`)
-            console.log(`- Users: ${data.users?.length || 0}`)
-            console.log(`- Messages: ${data.messages?.length || 0}`)
+            console.log(`- Users (${data.users?.length || 0}):`, data.users)
+            console.log(`- Messages (${data.messages?.length || 0}):`, data.messages)
             
             return data
         } catch (error) {

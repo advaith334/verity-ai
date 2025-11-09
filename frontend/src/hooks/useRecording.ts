@@ -1,4 +1,5 @@
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
+import { NGROK_URL } from '../constants'
 
 export interface LowConfidenceWord {
     word: string
@@ -12,15 +13,30 @@ interface TranscriptionResult {
     low_confidence_words: LowConfidenceWord[]
 }
 
-const useRecording = () => {
+interface RepairResult {
+    success: boolean
+    original_transcription: string
+    repaired_transcription: string
+    words_repaired: number
+}
+
+interface UseRecordingProps {
+    fetchSlackContext?: () => Promise<any>
+    autoRepair?: boolean
+}
+
+const useRecording = ({ fetchSlackContext, autoRepair = true }: UseRecordingProps = {}) => {
     const [isRecording, setIsRecording] = useState(false)
     const [transcription, setTranscription] = useState<string | null>(null)
+    const [repairedTranscription, setRepairedTranscription] = useState<string | null>(null)
     const [lowConfidenceWords, setLowConfidenceWords] = useState<LowConfidenceWord[]>([])
     const [isProcessing, setIsProcessing] = useState(false)
+    const [isRepairing, setIsRepairing] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
     const mediaRecorderRef = useRef<MediaRecorder | null>(null)
     const audioChunksRef = useRef<Blob[]>([])
+    const hasAutoRepaired = useRef(false)
 
     const startRecording = async () => {
         try {
@@ -76,7 +92,7 @@ const useRecording = () => {
             const formData = new FormData()
             formData.append('audio', audioBlob, 'recording.webm')
 
-            const response = await fetch('http://localhost:5000/transcribe', {
+            const response = await fetch(`${NGROK_URL}/transcribe`, {
                 method: 'POST',
                 body: formData,
             })
@@ -90,6 +106,10 @@ const useRecording = () => {
             console.log('transcription: ', data.transcription)
             setLowConfidenceWords(data.low_confidence_words)
             console.log('low confidence words: ', data.low_confidence_words)
+            
+            // Reset repaired transcription when new transcription is created
+            setRepairedTranscription(null)
+            hasAutoRepaired.current = false
         } catch (error) {
             console.error('Error transcribing audio:', error)
             setError('Failed to transcribe audio. Please try again.')
@@ -98,11 +118,92 @@ const useRecording = () => {
         }
     }
 
+    // Auto-repair effect: triggers when transcription is complete with low confidence words
+    useEffect(() => {
+        const shouldAutoRepair = 
+            autoRepair && 
+            transcription && 
+            lowConfidenceWords.length > 0 && 
+            !repairedTranscription && 
+            !hasAutoRepaired.current &&
+            !isProcessing &&
+            !isRepairing &&
+            fetchSlackContext
+
+        if (shouldAutoRepair) {
+            hasAutoRepaired.current = true
+            
+            const autoRepairTranscription = async () => {
+                try {
+                    console.log('🤖 Auto-repairing transcription...')
+                    const context = await fetchSlackContext!()
+                    if (context) {
+                        await repairTranscription(context)
+                    } else {
+                        console.warn('Failed to fetch Slack context for auto-repair')
+                    }
+                } catch (error) {
+                    console.error('Auto-repair failed:', error)
+                }
+            }
+
+            autoRepairTranscription()
+        }
+    }, [transcription, lowConfidenceWords, repairedTranscription, isProcessing, isRepairing, autoRepair, fetchSlackContext])
+
+    const repairTranscription = async (slackContext: any) => {
+        if (!transcription || !lowConfidenceWords || lowConfidenceWords.length === 0) {
+            console.log('No transcription or low confidence words to repair')
+            return
+        }
+
+        setIsRepairing(true)
+        setError(null)
+
+        try {
+            console.log('🔧 Repairing transcription with Slack context...')
+            
+            const response = await fetch(`${NGROK_URL}/repair_low_confidence_words`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    transcription: transcription,
+                    low_confidence_words: lowConfidenceWords,
+                    slack_context: slackContext
+                })
+            })
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`)
+            }
+
+            const data: RepairResult = await response.json()
+            
+            if (data.success) {
+                setRepairedTranscription(data.repaired_transcription)
+                console.log('✅ Transcription repaired successfully')
+                console.log('Original:', data.original_transcription)
+                console.log('Repaired:', data.repaired_transcription)
+            } else {
+                throw new Error('Repair failed')
+            }
+        } catch (error) {
+            console.error('❌ Error repairing transcription:', error)
+            setError('Failed to repair transcription. Using original.')
+        } finally {
+            setIsRepairing(false)
+        }
+    }
+
     return { 
         isRecording, 
-        transcription, 
+        transcription,
+        repairedTranscription,
         lowConfidenceWords,
         isProcessing,
+        isRepairing,
         error,
         toggleRecording,
         startRecording,
