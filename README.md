@@ -79,5 +79,5 @@ Slack requires a publicly accessible HTTPS redirect. Use a tunnel (e.g., ngrok) 
 
 ---
 
-Once the backend and extension are running, navigate to a Slack workspace in Chrome, open the popup, connect to Slack, and start recording. The final transcript will appear after the repair step completes.*** End Patch !***]{
+Once the backend and extension are running, navigate to a Slack workspace in Chrome, open the popup, connect to Slack, and start recording. The final transcript will appear after the repair step completes.
 
